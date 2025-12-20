@@ -1,0 +1,918 @@
+---
+title: "IS Data"
+author: "Greta Heiser"
+date: "2024-11-14"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(readxl)
+
+setwd("~/Desktop/Independent Study/Data")
+IS_Data <- read_excel("~/Desktop/Independent Study/Data/IS_Data.xlsx")
+```
+
+## Cleaning/Prep
+```{r}
+# Remove unnecessary variables
+IS_Data <- IS_Data[, -c(14, 16:ncol(IS_Data))]
+
+# Renaming variables with spaces
+IS_Data <- IS_Data |>
+  rename(
+    Yield = `Yield (%)`,
+    RSR = `RSR (%)`,
+    GHI = GHI_kWh_m2
+  )
+
+#Fix error in inconsistent input of climate zone abbreviations
+IS_Data <- IS_Data |>
+  #Bsk -> BSk
+  mutate(Climate_zone = ifelse(Climate_zone == 'Bsk', 'BSk', Climate_zone)) |>
+  #Cwb -> Cwa
+  mutate(Climate_zone = ifelse(Climate_zone == 'Cwb', 'Cwa', Climate_zone))
+
+#Recode shade types
+IS_Data <- IS_Data |>
+  #"." -> "Not Specified"
+  mutate(Shade_type = ifelse(Shade_type == '.', 'Not specified', Shade_type)) |>
+  #Solar_panel" -> "Solar panel"
+  mutate(Shade_type = ifelse(Shade_type == "Solar_panel", "Solar panel", Shade_type))
+
+# Remove shade type that is not solar panel
+SolarPanelShade <- IS_Data[IS_Data$Shade_type == "Solar panel", ]
+
+# Remove intercropping experiments
+ArtificialShade <- IS_Data |>
+  filter(Experiment_type == "Artificial shading")
+
+# Only intercropping experiments
+Intercropping <- IS_Data |>
+  filter(Experiment_type == "Intercropping")
+```
+
+
+## Export data as an Excel file
+```{r}
+# library(openxlsx)
+# 
+# # Create a new workbook and add a sheet
+# wb <- createWorkbook()
+# addWorksheet(wb, "Sheet 1")
+# 
+# # Write data to the sheet
+# writeData(wb, "Sheet 1", IS_Data)
+# 
+# # Save the workbook
+# saveWorkbook(wb, "IS_Data_Final.xlsx", overwrite = TRUE)
+```
+
+
+
+
+
+## EDA
+
+#### Univariate: Categorical Variables
+```{r}
+table(IS_Data$Crop)
+table(IS_Data$Crop_type)
+table(IS_Data$Experiment_type)
+table(IS_Data$Climate_zone)
+table(IS_Data$Hardiness_zone)
+table(IS_Data$Country)
+table(IS_Data$Shade_type)
+
+prop.table(table(IS_Data$Crop_type))
+prop.table(table(IS_Data$Experiment_type))
+prop.table(table(IS_Data$Climate_zone))
+prop.table(table(IS_Data$Hardiness_zone))
+prop.table(table(IS_Data$Shade_type))
+
+ggplot(IS_Data, aes(x = Crop)) + 
+  geom_bar() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+ggplot(IS_Data, aes(x = Crop_type)) + 
+  geom_bar() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+ggplot(IS_Data, aes(x = Experiment_type)) + 
+  geom_bar() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+ggplot(IS_Data, aes(x = Climate_zone)) + 
+  geom_bar() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+ggplot(IS_Data, aes(x = Hardiness_zone)) + 
+  geom_bar() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+ggplot(IS_Data, aes(x = Country)) + 
+  geom_bar() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+ggplot(na.omit(IS_Data), aes(x = Shade_type)) + 
+  geom_bar() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+```
+
+#### Univariate: Numerical Variables
+```{r}
+summary(IS_Data$Yield)
+summary(IS_Data$RSR)
+summary(IS_Data$GHI)
+
+ggplot(IS_Data, aes(x = Yield)) + 
+  geom_histogram(binwidth = 5)
+ggplot(IS_Data, aes(x = RSR)) + 
+  geom_histogram(binwidth = 5)
+ggplot(IS_Data, aes(x = GHI)) + 
+  geom_histogram(binwidth = 100)
+
+ggplot(IS_Data, aes(y = Yield)) + 
+  geom_boxplot()
+ggplot(IS_Data, aes(y = RSR)) + 
+  geom_boxplot()
+ggplot(IS_Data, aes(y = GHI)) + 
+  geom_boxplot()
+```
+
+
+#### Bivariate - 2 categorical
+```{r}
+ggplot(IS_Data, aes(x = Crop_type, fill = Climate_zone)) +
+  geom_bar(position = "dodge") +
+  labs(x = "Crop Type",
+       y = "Count",
+       fill = "Climate Zone") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+ggplot(IS_Data, aes(x = Crop_type, fill = Shade_type)) +
+  geom_bar(position = "dodge") +
+  labs(x = "Crop Type",
+       y = "Count",
+       fill = "Shade Type") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+```{r}
+# Summarize data to compute mean yield per Crop_type and Climate_zone
+yield_summary <- IS_Data %>%
+  group_by(Crop_type, Climate_zone) %>%
+  summarise(Average_Yield = mean(Yield, na.rm = TRUE), .groups = "drop")
+
+# Create bar chart with average yield
+ggplot(yield_summary, aes(x = Crop_type, y = Average_Yield, fill = Climate_zone)) +
+  geom_hline(yintercept = 100, linetype = "dashed", color = "black", linewidth = 0.4) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(x = "Crop Type",
+       y = "Average Yield",
+       fill = "Climate Zone") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+```{r}
+# Summarize data to compute mean yield per Crop_type and Hardiness_zone
+yield_summary <- IS_Data %>%
+  group_by(Crop_type, Hardiness_zone) %>%
+  summarise(Average_Yield = mean(Yield, na.rm = TRUE), .groups = "drop")
+
+# Create bar chart with average yield
+ggplot(yield_summary, aes(x = Crop_type, y = Average_Yield, fill = Hardiness_zone)) +
+  geom_hline(yintercept = 100, linetype = "dashed", color = "black", linewidth = 0.4) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(x = "Crop Type",
+       y = "Average Yield",
+       fill = "Plant Hardiness Zone") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+
+#### Bivariate - Categorical and Numerical
+```{r}
+ggplot(IS_Data, aes(x = Crop, y = Yield)) + 
+  geom_boxplot() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+ggplot(IS_Data, aes(x = Crop_type, y = Yield)) + 
+  geom_boxplot() +
+  geom_hline(yintercept = 100, linetype = "dashed", color = "black", linewidth = 0.4) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  xlab("Crop Type") +
+  ylab("Yield (%)")
+
+ggplot(IS_Data, aes(x = Climate_zone, y = Yield)) + 
+  geom_boxplot()
+
+ggplot(IS_Data, aes(x = Hardiness_zone, y = Yield)) + 
+  geom_boxplot()
+
+ggplot(IS_Data, aes(x = Shade_type, y = Yield)) + 
+  geom_hline(yintercept = 100, linetype = "dashed", color = "black", linewidth = 0.4) +
+  geom_boxplot() +
+  xlab("Shade Type") +
+  ylab("Yield (%)")
+
+ggplot(IS_Data, aes(x = Shade_type, y = RSR)) + 
+  geom_boxplot()
+
+ggplot(IS_Data, aes(x = Shade_type, y = GHI)) + 
+  geom_boxplot() 
+
+ggplot(IS_Data, aes(x = Experiment_type, y = Yield)) + 
+  geom_hline(yintercept = 100, linetype = "dashed", color = "black", linewidth = 0.4) +
+  geom_boxplot() +
+  xlab("Experiment Type") +
+  ylab("Yield (%)")
+```
+
+
+
+
+#### Boxplots for each crop within a given crop type
+```{r}
+# Berries
+ggplot(filter(IS_Data, Crop_type == "Berries"), aes(x = Crop, y = Yield)) +
+  geom_hline(yintercept = 100, linetype = "dashed", color = "black", linewidth = 0.4) +
+  geom_boxplot() +
+  ggtitle("Berries") +
+  labs(x = "Crop",
+       y = "Yield (%)") +
+  #theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  theme(plot.title = element_text(hjust = 0.5))
+
+# Fruits
+ggplot(filter(IS_Data, Crop_type == "Fruits"), aes(x = Crop, y = Yield)) +
+  geom_hline(yintercept = 100, linetype = "dashed", color = "black", linewidth = 0.4) +
+  geom_boxplot() +
+  ggtitle("Fruits") +
+  labs(x = "Crop",
+       y = "Yield (%)") +
+  #theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  theme(plot.title = element_text(hjust = 0.5))
+
+# Fruity vegetables
+ggplot(filter(IS_Data, Crop_type == "Fruity vegetables"), aes(x = Crop, y = Yield)) +
+  geom_hline(yintercept = 100, linetype = "dashed", color = "black", linewidth = 0.4) +
+  ggtitle("Fruity vegetables") +
+  geom_boxplot() +
+  labs(x = "Crop",
+       y = "Yield (%)") +
+  #theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  theme(plot.title = element_text(hjust = 0.5))
+
+# Grain legumes
+ggplot(filter(IS_Data, Crop_type == "Grain legumes"), aes(x = Crop, y = Yield)) +
+  geom_hline(yintercept = 100, linetype = "dashed", color = "black", linewidth = 0.4) +
+  ggtitle("Grain legumes") +
+  geom_boxplot() +
+  labs(x = "Crop",
+       y = "Yield (%)") +
+  #theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  theme(plot.title = element_text(hjust = 0.5))
+
+# Tubers/root crops
+ggplot(filter(IS_Data, Crop_type == "Tubers/root crops"), aes(x = Crop, y = Yield)) +
+  geom_hline(yintercept = 100, linetype = "dashed", color = "black", linewidth = 0.4) +
+  ggtitle("Tubers/root crops") +
+  geom_boxplot() +
+  labs(x = "Crop",
+       y = "Yield (%)") +
+  #theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+#### Scatterplot grid for Yield and RSR relationship across crop types
+```{r warning=FALSE}
+ggplot(IS_Data, aes(x = RSR, y = Yield, group = Crop_type, color = Crop_type)) +
+  coord_cartesian(ylim = c(0, 200)) +
+  geom_hline(yintercept = 100, color = "black", linewidth = 0.25) +
+  geom_smooth(method = "lm", color = "black", linewidth = 0.5) +
+  geom_point(alpha = 0.8) +
+  theme(legend.position = "none") +
+  facet_wrap(~ Crop_type, scale = "free_y") +
+  xlab("Reduction in Solar Radiation (%)") +
+  ylab("Yield (%)")
+```
+*Note (when shape = Experiment Type): Artificial shading experiments represented by cirle, intercropping experiments represented by triangle
+
+
+#### Scatterplot grid for Yield and RSR relationship across climate zones for one crop type at a time
+```{r}
+#Berries
+IS_Data |>
+  filter(Crop_type == "Berries") |>
+  ggplot(aes(x = RSR, y = Yield, group = Climate_zone, color = Climate_zone, shape = Experiment_type)) +
+  #coord_cartesian(ylim = c(0, 200)) +
+  geom_hline(yintercept = 100, color = "black", linewidth = 0.25) +
+  geom_point(alpha = 0.8) +
+  theme(legend.position = "none") +
+  facet_wrap(~ Climate_zone, scale = "free_y") +
+  ggtitle("Berries Yield Response to RSR Across Climate Zones") +
+  xlab("Reduction in Solar Radiation (%)") +
+  ylab("Yield (%)")
+
+#C3 cereals 
+IS_Data |>
+  filter(Crop_type == "C3 cereals") |>
+  ggplot(aes(x = RSR, y = Yield, group = Climate_zone, color = Climate_zone, shape = Experiment_type)) +
+  #coord_cartesian(ylim = c(0, 200)) +
+  geom_hline(yintercept = 100, color = "black", linewidth = 0.25) +
+  geom_point(alpha = 0.8) +
+  theme(legend.position = "none") +
+  facet_wrap(~ Climate_zone, scale = "free_y") +
+  ggtitle("C3 Cereals Yield Response to RSR Across Climate Zones") +
+  xlab("Reduction in Solar Radiation (%)") +
+  ylab("Yield (%)")
+
+#Forages
+IS_Data |>
+  filter(Crop_type == "Forages") |>
+  ggplot(aes(x = RSR, y = Yield, group = Climate_zone, color = Climate_zone, shape = Experiment_type)) +
+  #coord_cartesian(ylim = c(0, 200)) +
+  geom_hline(yintercept = 100, color = "black", linewidth = 0.25) +
+  geom_point(alpha = 0.8) +
+  theme(legend.position = "none") +
+  facet_wrap(~ Climate_zone, scale = "free_y") +
+  ggtitle("Forages Yield Response to RSR Across Climate Zones") +
+  xlab("Reduction in Solar Radiation (%)") +
+  ylab("Yield (%)")
+
+#Fruits
+IS_Data |>
+  filter(Crop_type == "Fruits") |>
+  ggplot(aes(x = RSR, y = Yield, group = Climate_zone, color = Climate_zone, shape = Experiment_type)) +
+  #coord_cartesian(ylim = c(0, 200)) +
+  geom_hline(yintercept = 100, color = "black", linewidth = 0.25) +
+  geom_point(alpha = 0.8) +
+  theme(legend.position = "none") +
+  facet_wrap(~ Climate_zone, scale = "free_y") +
+  ggtitle("Fruits Yield Response to RSR Across Climate Zones") +
+  xlab("Reduction in Solar Radiation (%)") +
+  ylab("Yield (%)")
+
+#Fruity vegetables
+IS_Data |>
+  filter(Crop_type == "Fruity vegetables") |>
+  ggplot(aes(x = RSR, y = Yield, group = Climate_zone, color = Climate_zone, shape = Experiment_type)) +
+  #coord_cartesian(ylim = c(0, 200)) +
+  geom_hline(yintercept = 100, color = "black", linewidth = 0.25) +
+  geom_point(alpha = 0.8) +
+  theme(legend.position = "none") +
+  facet_wrap(~ Climate_zone, scale = "free_y") +
+  ggtitle("Fruity Vegetables Yield Response to RSR Across Climate Zones") +
+  xlab("Reduction in Solar Radiation (%)") +
+  ylab("Yield (%)")
+
+#Grain legumes
+IS_Data |>
+  filter(Crop_type == "Grain legumes") |>
+  ggplot(aes(x = RSR, y = Yield, group = Climate_zone, color = Climate_zone, shape = Experiment_type)) +
+  #coord_cartesian(ylim = c(0, 200)) +
+  geom_hline(yintercept = 100, color = "black", linewidth = 0.25) +
+  geom_point(alpha = 0.8) +
+  theme(legend.position = "none") +
+  facet_wrap(~ Climate_zone, scale = "free_y") +
+  ggtitle("Grain Legumes Yield Response to RSR Across Climate Zones") +
+  xlab("Reduction in Solar Radiation (%)") +
+  ylab("Yield (%)")
+
+#Leafy vegetables
+IS_Data |>
+  filter(Crop_type == "Leafy vegetables") |>
+  ggplot(aes(x = RSR, y = Yield, group = Climate_zone, color = Climate_zone, shape = Experiment_type)) +
+  #coord_cartesian(ylim = c(0, 200)) +
+  geom_hline(yintercept = 100, color = "black", linewidth = 0.25) +
+  geom_point(alpha = 0.8) +
+  theme(legend.position = "none") +
+  facet_wrap(~ Climate_zone, scale = "free_y") +
+  ggtitle("Leafy Vegetables Yield Response to RSR Across Climate Zones") +
+  xlab("Reduction in Solar Radiation (%)") +
+  ylab("Yield (%)")
+
+#Maize
+IS_Data |>
+  filter(Crop_type == "Maize") |>
+  ggplot(aes(x = RSR, y = Yield, group = Climate_zone, color = Climate_zone, shape = Experiment_type)) +
+  #coord_cartesian(ylim = c(0, 200)) +
+  geom_hline(yintercept = 100, color = "black", linewidth = 0.25) +
+  geom_point(alpha = 0.8) +
+  theme(legend.position = "none") +
+  facet_wrap(~ Climate_zone, scale = "free_y") +
+  ggtitle("Maize Yield Response to RSR Across Climate Zones") +
+  xlab("Reduction in Solar Radiation (%)") +
+  ylab("Yield (%)")
+
+#Tubers/root crops
+IS_Data |>
+  filter(Crop_type == "Tubers/root crops") |>
+  ggplot(aes(x = RSR, y = Yield, group = Climate_zone, color = Climate_zone, shape = Experiment_type)) +
+  #coord_cartesian(ylim = c(0, 200)) +
+  geom_hline(yintercept = 100, color = "black", linewidth = 0.25) +
+  geom_point(alpha = 0.8) +
+  theme(legend.position = "none") +
+  facet_wrap(~ Climate_zone, scale = "free_y") +
+  ggtitle("Tubers/Root Crops Yield Response to RSR Across Climate Zones") +
+  xlab("Reduction in Solar Radiation (%)") +
+  ylab("Yield (%)")
+```
+
+#### Scatterplot grid for Yield and RSR relationship for each shade type
+```{r}
+ggplot(IS_Data, aes(x = RSR, y = Yield, group = Shade_type, color = Shade_type)) +
+  coord_cartesian(ylim = c(0, 300)) +
+  geom_hline(yintercept = 100, color = "black", linewidth = 0.25) +
+  #geom_smooth(method = "loess", color = "black", linewidth = 0.5) +
+  geom_point(alpha = 0.8) +
+  theme(legend.position = "none") +
+  facet_wrap(~ Shade_type, scale = "free_y") +
+  xlab("Reduction in Solar Radiation (%)") +
+  ylab("Yield (%)")
+```
+
+
+#### Scatterplot grid for Yield and RSR relationship for each experiment type
+```{r}
+ggplot(IS_Data, aes(x = RSR, y = Yield, group = Experiment_type, color = Experiment_type)) +
+  coord_cartesian(ylim = c(0, 300)) +
+  geom_hline(yintercept = 100, color = "black", linewidth = 0.25) +
+  #geom_smooth(method = "loess", color = "black", linewidth = 0.5) +
+  geom_point(alpha = 0.8) +
+  theme(legend.position = "none") +
+  facet_wrap(~ Experiment_type, scale = "free_y") +
+  xlab("Reduction in Solar Radiation (%)") +
+  ylab("Yield (%)")
+```
+
+
+#### Bivariate - 2 numerical
+```{r}
+IS_Data |>
+  ggplot(aes(x = RSR, y = Yield)) +
+  geom_point() +
+  geom_smooth(method = "loess", color = "blue", linewidth = 0.75) +
+  labs(x = "Reduction in Solar Radiation (%)", y = "Yield (%)")
+
+# IS_Data |>
+#   ggplot(aes(x = GHI, y = Yield)) +
+#   geom_point() +
+#   geom_smooth(method = "loess", color = "blue", linewidth = 0.75) +
+#   labs(x = "GHI", y = "Yield (%)")
+```
+
+
+
+
+
+
+
+#### Correlations
+```{r}
+# Compute the correlation matrix
+cor_matrix <- cor(numeric_vars)
+
+# Print the correlation matrix
+print(cor_matrix)
+
+# Create a heatmap using the base R heatmap function
+heatmap(cor_matrix, main = "Correlation Matrix Heatmap")
+```
+Yield has strongest correlation with RSR, weaker correlation with GHI.
+
+```{r}
+# Continuous variables
+continuous_vars <- c("Yield", "RSR", "GHI")
+
+# Calculate Pearson correlations between continuous variables
+cor_continuous <- cor(IS_Data[, continuous_vars], method = "pearson")
+print("Continuous Variable Correlation Matrix:")
+print(cor_continuous)
+
+# Categorical variables
+categorical_vars <- c("Crop_type", "Experiment_type", "Climate_zone", "Hardiness_zone", "Shade_type")
+
+# For categorical-categorical correlations, we will use chi-squared tests and Cramer's V
+library(vcd)  # For Cramér's V
+
+# Loop through all pairs of categorical variables to perform Chi-squared tests and calculate Cramer's V
+cat("Categorical-Categorical Correlations (Cramér's V):\n")
+for (var1 in categorical_vars) {
+  for (var2 in categorical_vars) {
+    if (var1 != var2) {
+      # Create a contingency table for the two categorical variables
+      table_data <- table(IS_Data[[var1]], IS_Data[[var2]])
+      
+      # Perform Chi-squared test
+      chi_square <- chisq.test(table_data)
+      cramer_v <- assocstats(table_data)$cramer  # Cramér's V
+      cat(paste(var1, "vs", var2, "Chi-squared p-value:", chi_square$p.value, "Cramér's V:", cramer_v, "\n"))
+    }
+  }
+}
+
+# For continuous-categorical correlations, use Point-Biserial correlation (for each continuous and categorical pair)
+cat("\nContinuous-Categorical Correlations (Point-Biserial):\n")
+for (cont_var in continuous_vars) {
+  for (cat_var in categorical_vars) {
+    # Convert categorical variable to numeric (as required by cor())
+    cat_numeric <- as.numeric(factor(IS_Data[[cat_var]]))
+    point_biserial <- cor(IS_Data[[cont_var]], cat_numeric, method = "pearson")
+    cat(paste(cont_var, "vs", cat_var, "Point-Biserial Correlation:", point_biserial, "\n"))
+  }
+}
+```
+
+```{r}
+# List of categorical variables in your dataset
+categorical_vars <- c("Crop_type", "Experiment_type", "Climate_zone", "Hardiness_zone", "Shade_type")
+
+# Loop through all pairs of categorical variables to perform Chi-squared tests or Fisher's Exact Test
+cat("Categorical-Categorical Correlations (Cramér's V or Fisher's Test):\n")
+for (var1 in categorical_vars) {
+  for (var2 in categorical_vars) {
+    if (var1 != var2) {
+      # Create a contingency table for the two categorical variables
+      table_data <- table(IS_Data[[var1]], IS_Data[[var2]])
+      
+      # Check if the expected counts are too small (less than 5)
+      if (any(chisq.test(table_data)$expected < 5)) {
+        # Use Fisher's Exact Test with simulation for large or sparse tables
+        fisher_result <- fisher.test(table_data, simulate.p.value = TRUE)
+        cramer_v <- NA  # Skip Cramér's V as Fisher's test doesn't provide it
+        cat(paste(var1, "vs", var2, "Fisher's Exact Test p-value:", fisher_result$p.value, "\n"))
+      } else {
+        # Perform Chi-squared test with simulation if expected counts are small
+        chi_square <- chisq.test(table_data, simulate.p.value = TRUE)
+        cramer_v <- assocstats(table_data)$cramer  # Cramér's V
+        cat(paste(var1, "vs", var2, "Chi-squared p-value:", chi_square$p.value, "Cramér's V:", cramer_v, "\n"))
+      }
+    }
+  }
+}
+```
+
+
+
+
+
+
+
+
+
+## Regression
+
+```{r}
+fullmodel <- lm(Yield ~ ., data = IS_Data)
+summary(fullmodel)
+```
+
+```{r}
+model2 <- lm(Yield ~ Crop_type + RSR + Experiment_type + Climate_zone + Hardiness_zone + GHI + Shade_type, data = IS_Data)
+
+summary(model2)
+```
+
+```{r, fig.height=8, fig.width=8}
+par(mfrow=c(2,2))
+plot(model2)
+```
+
+```{r}
+# Perform stepwise selection
+final_stepwiseModel <- step(model2, direction = "both", trace = 1)
+
+summary(final_stepwiseModel)
+# Crop type, RSR, Experiment type, Climate zone, Hardiness zone
+```
+
+```{r, fig.height=8, fig.width=8}
+par(mfrow=c(2,2))
+plot(final_stepwiseModel)
+```
+
+
+
+
+
+
+#### Recreating model from meta-analysis
+```{r}
+metaCopy <- lm(log(Yield) ~ RSR + I(RSR^2) + RSR*Crop_type + RSR*Experiment_type + RSR*Climate_zone + RSR*Shade_type + RSR*GHI + RSR*GHI*Crop_type + I(RSR^2)*Crop_type + I(RSR^2)*Experiment_type + I(RSR^2)*Climate_zone + I(RSR^2)*Shade_type + I(RSR^2)*GHI, data = IS_Data)
+
+summary(metaCopy)
+```
+
+#### Final model from meta-analysis
+```{r}
+metaFinal <- lm(Yield ~ RSR + I(RSR^2) + RSR*Crop_type, data = IS_Data)
+
+summary(metaFinal)
+```
+
+```{r, fig.height=8, fig.width=8}
+par(mfrow=c(2,2))
+plot(metaFinal)
+```
+
+```{r}
+metaFinalLog <- lm(log(Yield) ~ RSR + I(RSR^2) + RSR*Crop_type, data = IS_Data)
+
+summary(metaFinalLog)
+```
+Log transformation increased R^2 from 0.4601 to 0.5875
+
+Check AIC:
+```{r}
+AIC(metaFinalLog)
+```
+
+Get formula for the model:
+```{r}
+cat("Model Formula:\n")
+formula(metaFinalLog)
+```
+
+Diagnostic plots (meta-analysis model):
+```{r, fig.height=8, fig.width=8}
+par(mfrow=c(2,2))
+plot(metaFinalLog)
+```
+
+
+
+
+
+
+#### Full model with interactions and quadratic RSR term for stepwise selection
+```{r}
+full <- lm(Yield ~ RSR + I(RSR^2) + Crop_type + Experiment_type + Climate_zone + Hardiness_zone + Shade_type + GHI + RSR*Crop_type + RSR*Experiment_type + RSR*Climate_zone + RSR*Hardiness_zone + RSR*Shade_type + RSR*GHI + RSR*GHI*Crop_type + I(RSR^2)*Crop_type + I(RSR^2)*Experiment_type + I(RSR^2)*Climate_zone + I(RSR^2)*Hardiness_zone + I(RSR^2)*Shade_type + I(RSR^2)*GHI, data = IS_Data)
+
+summary(full)
+
+#Null model:
+null <- lm(Yield ~ 1, data = IS_Data)
+```
+Full model R^2 = 0.7006
+
+
+Stepwise selection based on AIC
+```{r}
+stepAIC <- step(null, scope = list(lower = null, upper = full), direction = "both")
+
+summary(stepAIC)
+
+AIC(stepAIC)
+BIC(stepAIC)
+```
+R^2 = 0.5585, AIC = 3959.877, Residual standard error: 23.04 on 365 df
+
+```{r}
+#Get formula for the model
+cat("Model Formula:\n")
+formula(stepAIC)
+```
+
+Stepwise selection based on BIC
+```{r}
+stepBIC <- step(null, scope = list(lower = null, upper = full), direction = "both", k = log(nrow(IS_Data)))
+
+summary(stepBIC)
+
+AIC(stepBIC)
+BIC(stepBIC)
+```
+R^2 = 0.4441, BIC = 4095.372
+
+```{r}
+#Get formula for the model
+cat("Model Formula:\n")
+formula(stepBIC)
+```
+
+Diagnostic plots before sqrt transformation:
+```{r, fig.height=8, fig.width=8}
+par(mfrow=c(2,2))
+plot(stepBIC)
+```
+
+
+
+
+
+
+
+
+
+
+#### Box-Cox to find best transformation
+```{r}
+# Using final model after stepwise BIC without any transformation yet
+
+library(MASS)
+boxcox(stepBIC, lambda = seq(-2, 2, 0.1))
+```
+Box-cox shows that a square root transformation would be best
+
+
+#### Square root transformation model
+```{r}
+final <- lm(sqrt(Yield) ~ I(RSR^2) + Crop_type + I(RSR^2):Crop_type, data = IS_Data)
+
+summary(final)
+
+AIC(final)
+BIC(final)
+```
+R^2 = 0.5322, BIC = 1595.054
+
+
+Add just climate zone and check R^2 and BIC
+```{r}
+final <- lm(sqrt(Yield) ~ I(RSR^2) + Crop_type + I(RSR^2):Crop_type + Climate_zone, data = IS_Data)
+
+summary(final)
+
+AIC(final)
+BIC(final)
+```
+R^2 = 0.5552, BIC = 1633.508
+
+
+Add just hardiness zone and check R^2 and BIC
+```{r}
+final <- lm(sqrt(Yield) ~ I(RSR^2) + Crop_type + I(RSR^2):Crop_type + Hardiness_zone, data = IS_Data)
+
+summary(final)
+
+AIC(final)
+BIC(final)
+
+formula(final)
+```
+R^2 = 0.5735, BIC = 1605.597
+
+Plant hardiness zone is better predictor than climate zone
+
+
+Confidence intervals
+```{r}
+confint(final)
+```
+
+
+```{r}
+formula(final)
+```
+
+
+Diagnostic plots: final model
+```{r, fig.height=8, fig.width=8}
+par(mfrow=c(2,2))
+plot(final)
+```
+
+
+VIF
+```{r}
+library(car)
+vif(final)
+vif(final, type = "predictor")
+```
+
+Centering RSR^2 - did not improve VIF
+```{r}
+# # Center RSR²
+# IS_Data$RSR2_centered <- scale(IS_Data$RSR^2, center = TRUE, scale = FALSE)
+# 
+# # Refit the model with centered RSR²
+# model_centered <- lm(sqrt(Yield) ~ RSR2_centered + Crop_type + RSR2_centered:Crop_type + Hardiness_zone, data = IS_Data)
+# 
+# # Summary and BIC
+# summary(model_centered)
+# BIC(model_centered)
+# 
+# # Check VIF again
+# library(car)
+# vif(model_centered)
+```
+
+Standardizing - did not improve VIF
+```{r}
+# # Standardize RSR^2
+# IS_Data$RSR2_scaled <- scale(IS_Data$RSR^2, center = TRUE, scale = TRUE)
+# 
+# # Refit the model with standardized RSR²
+# model_scaled <- lm(sqrt(Yield) ~ RSR2_scaled + Crop_type + RSR2_scaled:Crop_type + Hardiness_zone, data = IS_Data)
+# 
+# # Summary and BIC
+# summary(model_scaled)
+# BIC(model_scaled)
+# 
+# # Check VIF again
+# library(car)
+# vif(model_scaled)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+## Inference
+
+#### ANOVA test for difference in mean yield across shade types
+```{r}
+oneway.test(Yield ~ Shade_type,
+  data = IS_Data,
+  var.equal = TRUE # assuming equal variances
+)
+```
+
+
+#### ANOVA test for difference in response of yield to RSR between experiment types - on final model
+```{r}
+final_modelInteraction <- lm(Yield ~ Crop + RSR*Experiment_type + Climate_zone + 
+    Hardiness_zone, data = IS_Data)
+
+anova(final_stepwiseModel, final_modelInteraction)
+```
+
+#### ANOVA test for significant difference in in the response of yield to RSR across shade types
+```{r}
+# ANOVA example
+anova_model <- aov(Yield ~ Shade_type, data = IS_Data)
+summary(anova_model)
+
+# ANCOVA example controlling for RSR
+ancova_model <- aov(Yield ~ Shade_type + RSR, data = IS_Data)
+summary(ancova_model)
+```
+
+```{r}
+# ANOVA example
+anova_model <- aov(Yield ~ RSR, data = IS_Data)
+summary(anova_model)
+
+# ANCOVA example controlling for RSR
+ancova_model <- aov(Yield ~ Shade_type + RSR, data = IS_Data)
+summary(ancova_model)
+```
+
+#### ANOVA test for significant difference in response of yield to RSR between experiment types
+```{r}
+# Direct test:
+expType_interactionModel <- lm(Yield ~ RSR * Experiment_type, data = IS_Data)
+expType_reducedModel <- lm(Yield ~ RSR + Experiment_type, data = IS_Data)
+anova(expType_reducedModel, expType_interactionModel)
+
+# More nuanced test:
+
+```
+
+There IS evidence of a significant difference in the response of yield to RSR between intercropping and shading-only experiments.
+
+
+
+
+
+#### Scatterplots with regression lines (code is here because it follows the creation of the models)
+```{r}
+# Create a data frame with fitted values, confidence intervals, and prediction intervals
+IS_Data$Fitted <- predict(metaFinal)  # Fitted values
+IS_Data$CI <- predict(metaFinal, interval = "confidence")[, 2:3]  # 95% Confidence intervals
+IS_Data$PI <- predict(metaFinal, interval = "prediction")[, 2:3]  # 95% Prediction intervals
+
+ggplot(IS_Data, aes(x = RSR, y = Yield, group = Crop_type, color = Crop_type, shape = Experiment_type)) +
+  coord_cartesian(ylim = c(0, 200)) +
+  geom_hline(yintercept = 100, color = "black", linewidth = 0.25) +
+  
+  # Plot black regression line using fitted values
+  geom_line(aes(y = Fitted), color = "black", linewidth = 0.5) +
+  
+  # Plot dark grey confidence intervals
+  geom_ribbon(aes(ymin = CI[,1], ymax = CI[,2]), fill = "darkgrey", alpha = 0.4) +
+  
+  # Plot light grey prediction intervals
+  geom_ribbon(aes(ymin = PI[,1], ymax = PI[,2]), fill = "lightgrey", alpha = 0.2) +
+  
+  geom_point(alpha = 0.6) +
+  theme(legend.position = "none") +
+  facet_wrap(~ Crop_type, scale = "free_y") +
+  xlab("Reduction in Solar Radiation (%)") +
+  ylab("Yield (%)")
+```
+
+
